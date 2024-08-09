@@ -1,0 +1,99 @@
+name: CI/CD Pipeline
+
+on:
+  workflow_dispatch:
+
+env:
+  CLUSTER_NAME: demo-app-cluster
+  SERVICE_NAME: demo-app-service
+  CONTAINER_NAME: demo-app-task
+  ECR_REPOSITORY: demo-app-repo
+  PORT: 80
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    - name: Set up Docker Build
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build, tag, and push Docker image
+      id: build-image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+        REPOSITORY: ${{ env.ECR_REPOSITORY }}
+      run: |
+        docker build -t $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG .
+        docker push $ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG
+        echo "image=$ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+    - name: Fill in the new image ID in the Amazon ECS task definition
+      id: task-def
+      uses: aws-actions/amazon-ecs-render-task-definition@v1
+      with:
+        task-definition: ecs-task-definition.json  # Replace with your task definition file
+        container-name: ${{ env.CONTAINER_NAME }}
+        image: ${{ steps.build-image.outputs.image }}
+
+    - name: Deploy to ECS 
+      id: deploy-to-ecs
+      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+      with: 
+        task-definition: ${{ steps.task-def.outputs.task-definition }}
+        service: ${{ env.SERVICE_NAME }}
+        cluster: ${{ env.CLUSTER_NAME }}
+        wait-for-service-stability: true
+
+    - name: Store Successful Task Definition ARN
+      if: success()
+      run: |
+        echo "TASK_DEFINITION_ARN=${{ steps.task-def.outputs.task-definition }}" >> $GITHUB_ENV
+
+    - name: Fetch ECS Task Public IP
+      id: fetch-ip
+      run: |
+        ECS_TASK_ARN=$(aws ecs list-tasks --cluster ${{ env.CLUSTER_NAME }} --service-name ${{ env.SERVICE_NAME }} --query "taskArns[0]" --output text)
+        ENI_ID=$(aws ecs describe-tasks --cluster ${{ env.CLUSTER_NAME }} --tasks $ECS_TASK_ARN --query "tasks[0].attachments[0].details[?name=='networkInterfaceId'].value" --output text)
+        PUBLIC_IP=$(aws ec2 describe-network-interfaces --network-interface-ids $ENI_ID --query "NetworkInterfaces[0].Association.PublicIp" --output text)
+        echo "PUBLIC_IP=$PUBLIC_IP" >> $GITHUB_ENV
+        echo "Public IP of the ECS Task: $PUBLIC_IP"
+
+    - name: Run Integration Test with Curl
+      id: integration-test
+      run: |
+        response=$(curl --write-out '%{http_code}' --silent --output /dev/null http://$PUBLIC_IP:${{ env.PORT }})
+        if [ "$response" -eq 200 ]; then
+          echo "Integration Test Passed!"
+        else
+          echo "Integration Test Failed!"
+          exit 1
+        fi
+      continue-on-error: true   # Allows the workflow to continue even if tests fail
+
+    - name: Rollback if Integration Tests Fail
+      if: failure()  # This step runs only if the previous step fails
+      run: |
+        echo "Integration tests failed. Rolling back to the last successful task definition..."
+        aws ecs update-service \
+          --cluster ${{ env.CLUSTER_NAME }} \
+          --service ${{ env.SERVICE_NAME }} \
+          --task-definition ${{ env.TASK_DEFINITION_ARN }} \
+          --force-new-deployment
+
+
