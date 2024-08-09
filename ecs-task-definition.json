@@ -1,9 +1,9 @@
 {
-    "taskDefinitionArn": "arn:aws:ecs:us-east-1:937478851919:task-definition/demo-app-tf:23",
+    "taskDefinitionArn": "arn:aws:ecs:us-east-1:account_id:task-definition/demo-app-tf:23",
     "containerDefinitions": [
         {
             "name": "demo-app-task",
-            "image": "937478851919.dkr.ecr.us-east-1.amazonaws.com/demo-app-repo",
+            "image": "account_id.dkr.ecr.us-east-1.amazonaws.com/demo-app-repo",
             "cpu": 0,
             "portMappings": [
                 {
@@ -30,8 +30,8 @@
         }
     ],
     "family": "demo-app-tf",
-    "taskRoleArn": "arn:aws:iam::937478851919:role/ecsTaskrole",
-    "executionRoleArn": "arn:aws:iam::937478851919:role/ecsTaskrole",
+    "taskRoleArn": "arn:aws:iam::account_id:role/ecsTaskrole",
+    "executionRoleArn": "arn:aws:iam::account_id:role/ecsTaskrole",
     "networkMode": "awsvpc",
     "revision": 23,
     "volumes": [],
@@ -68,7 +68,7 @@
         "operatingSystemFamily": "LINUX"
     },
     "registeredAt": "2024-08-09T09:28:47.021Z",
-    "registeredBy": "arn:aws:iam::937478851919:user/sahil.aws",
+    "registeredBy": "arn:aws:iam::account_id:user/username",
     "tags": []
 }
 

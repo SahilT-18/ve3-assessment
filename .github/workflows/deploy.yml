@@ -4,10 +4,10 @@ on:
   workflow_dispatch:
 
 env:
-  CLUSTER_NAME: demo-app-cluster
-  SERVICE_NAME: demo-app-service
-  CONTAINER_NAME: demo-app-task
-  ECR_REPOSITORY: demo-app-repo
+  CLUSTER_NAME: replace with cluster name
+  SERVICE_NAME: replace with service name
+  CONTAINER_NAME: replace with container name
+  ECR_REPOSITORY: replace with repository name
   PORT: 80
 
 jobs:
